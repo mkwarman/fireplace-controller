@@ -1,2 +1,2 @@
-Flask==3.0.0
+-r requirements-test.txt
 RPi.GPIO==0.7.1

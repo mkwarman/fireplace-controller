@@ -1,44 +1,61 @@
-import RPi.GPIO as GPIO
-import configparser
+import gpio
+import ecobee
+from configuration import config
 from flask import Flask
 
-PIN = 11
-CONFIG_FILENAME = 'config.ini'
-
-# Setup
-config = configparser.ConfigParser()
-config.read(CONFIG_FILENAME)
 app = Flask(__name__)
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(PIN, GPIO.OUT)
-pinState = 0
 
-def setOn(on):
-    global pinState
-    pinState = on
-    GPIO.output(PIN, pinState)
 
+def setup():
+    global fireplace, ecobee
+
+    if 'Environment' not in config.sections():
+        raise Exception("Cannot find config data. Did you setup config.ini?")
+    fireplace = gpio.GPIO()
+    ecobee = ecobee.Ecobee()
 
 
 @app.route("/")
 def hello_world():
     return "<p>Hello, World!</p>"
 
+
 @app.route("/on")
 def on():
-    setOn(True)
+    fireplace.setOn()
     return "<p>On</p>"
+
 
 @app.route("/off")
 def off():
-    setOn(False)
+    fireplace.setOff()
     return "<p>Off</p>"
 
-@app.route("/config")
+
+@app.route("/info")
 def conf():
-    testval=config['Auth']['Test']
-    return "<p>" + testval + "</p>"
+    return ecobee.getInfo()
+
+
+@app.route("/authorize")
+def authorize():
+    ecobeePin = ecobee.authorize()
+    return '<p>Enter this Pin into your ecobee \"My Apps\" section: <code>'\
+           '{code}</code></p><p>Click here when done: '\
+           '<a href="/completeAuthorization"><button>Done</button></a>'\
+           .format(code=ecobeePin)
+
+
+@app.route("/completeAuthorization")
+def refreshToken():
+    didSucceed = ecobee.completeAuthorization()
+    resultText = 'Success' if didSucceed else 'Fail'
+    return '<p>{resultText}</p>'.format(resultText=resultText)
+
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
-
+    setup()
+    app.run(
+        host=config.get('Environment', 'Host', '127.0.0.1'),
+        port=config.get('Environment', 'Port', '5000')
+    )
