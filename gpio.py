@@ -1,5 +1,7 @@
 from configuration import config
 
+testMode = False
+
 try:
     import RPi.GPIO
 except ImportError:
@@ -21,7 +23,7 @@ class GPIO():
 
     def __init__(self):
         self._testMode = testMode
-        self._pinNumber = config.get('Environment', 'PinNumber', None)
+        self._pinNumber = int(config.get('Environment', 'PinNumber', None))
         self._pinOn = False
 
         if not self._testMode:
