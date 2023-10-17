@@ -1,21 +1,39 @@
 import requests
+import time
+from typing import Callable, Dict
 from ecobeeAuth import EcobeeAuth
 from configuration import config
 
 AUTHORIZE_URL = 'https://api.ecobee.com/authorize'
 TOKEN_URL = 'https://api.ecobee.com/token'
-INFO_URL = '''
-https://api.ecobee.com/1/thermostat?format=json&body={"selection":{"selectionType":"registered","selectionMatch":"","includeRuntime":true,"includeSettings":true,"includeEquipmentStatus":true}}
-'''
+THERMOSTAT_URL = 'https://api.ecobee.com/1/thermostat?format=json'
+
+# Cache life is 3 minutes, per ecobee API limits
+# https://www.ecobee.com/home/developer/api/documentation/v1/operations/get-thermostat-summary.shtml
+CACHE_LIFE = 180
 
 
-def isExpiredTokenError(response):
-    return response.json()['status']['code'] == 14
+def isExpiredTokenResult(response: requests.Response):
+    return (response.status_code == 500 and
+            response.json()['status']['code'] == 14)
+
+
+class CacheEntry():
+    time: float
+    value: any
+
+    def __init__(self, value):
+        self.time = time.time()
+        self.value = value
+
+    def isCurrent(self):
+        return (time.time() - self.time) < CACHE_LIFE
 
 
 class Ecobee():
     auth: EcobeeAuth = None
     accessToken: str = None
+    cache: Dict[str, CacheEntry] = {}
 
     def __requestAccessToken__(self):
         clientId = config.get('Auth', 'ClientId', None)
@@ -45,10 +63,55 @@ class Ecobee():
         self.accessToken = jsonResponse['access_token']
         self.auth.refreshToken = jsonResponse['refresh_token']
 
-    def __getAuthHeaders(self):
+    def __getAuthHeaders__(self):
         if self.accessToken is None:
-            return None
+            raise Exception("Authorization required, go to /authorize")
         return {'Authorization': 'Bearer {}'.format(self.accessToken)}
+
+    def __withRefresh__(self, func: Callable[..., requests.Response]):
+        result = func()
+        if not isExpiredTokenResult(result):
+            return result
+        self.__refreshAccessToken__()
+        return func()
+
+    def __request__(self,
+                    func: Callable[..., requests.Response],
+                    cacheKey: str):
+        if cacheKey in self.cache and self.cache[cacheKey].isCurrent():
+            print("hit cache")
+            return self.cache[cacheKey].value
+        print("making request")
+        response = self.__withRefresh__(func)
+        self.cache[cacheKey] = CacheEntry(response)
+        return response
+
+    def __getInfoRuntime__(self):
+        return self.__request__(
+            lambda:
+            requests.get(THERMOSTAT_URL,
+                         headers=self.__getAuthHeaders__(),
+                         params={
+                            'body': '''
+                            {"selection":{"selectionType":"registered",
+                            "selectionMatch":"","includeRuntime":true}}
+                            '''}
+                         ),
+            'INFO_runtime')
+
+    def __getInfoRuntimeSettingsStatus__(self):
+        return self.__request__(
+            lambda:
+            requests.get(THERMOSTAT_URL,
+                         headers=self.__getAuthHeaders__(),
+                         params={
+                            'body': '''
+                            {"selection":{"selectionType":"registered",
+                            "selectionMatch":"","includeRuntime":true,
+                            "includeSettings":true,"includeEquipmentStatus":true}}
+                            '''}
+                         ),
+            'INFO_runtime_settings_status')
 
     def __init__(self):
         clientId = config.get('Auth', 'ClientId', None)
@@ -89,15 +152,78 @@ class Ecobee():
         return True if self.accessToken is not None else False
 
     def getInfo(self):
-        headers = self.__getAuthHeaders()
-        if headers is None:
-            return "Authorization required, go to /authorize"
-        infoResponse = requests.get(INFO_URL, headers=headers)
+        return self.__getInfoRuntimeSettingsStatus__().json()
 
-        # Retry once after refreshing token if needed
-        if (infoResponse.status_code != 200
-           and isExpiredTokenError(infoResponse)):
-            self.__refreshAccessToken__()
-            infoResponse = requests.get(INFO_URL, headers=headers)
+    def getEvents(self):
+        # Not cached as events can happen anytime
+        return self.__withRefresh__(
+            lambda: requests.get(THERMOSTAT_URL,
+                                 headers=self.__getAuthHeaders__(),
+                                 params={
+                                    'body': '''
+                                    {"selection":{"selectionType":"registered",
+                                    "selectionMatch":"","includeEvents":true}}
+                                    '''}
+                                 )).json()
 
-        return infoResponse.json()
+    def getCurrentTemp(self):
+        infoRuntime = self.__getInfoRuntime__()
+
+        return int(infoRuntime.json()
+                   ['thermostatList'][0]
+                   ['runtime']
+                   ['actualTemperature'])
+
+    def getTempDifferential(self):
+        """
+        Returns the difference between current temp and desired heating temp in
+        tenths of degrees. Positive numbers indicate the current temperature
+        is warmer than desired, negative number indicate that the current
+        temperature is lower than desired.
+        """
+        infoRuntime = self.__getInfoRuntime__()
+        runtime = infoRuntime.json()['thermostatList'][0]['runtime']
+
+        actualTemperature = int(runtime['actualTemperature'])
+        setTemperature = int(runtime['desiredHeat'])
+
+        return actualTemperature - setTemperature
+
+    def setFanHold(self):
+        headers = self.__getAuthHeaders__()
+        self.__withRefresh__(
+            lambda: requests.post(THERMOSTAT_URL, headers=headers, json={
+                "selection": {
+                    "selectionType": "registered",
+                    "selectionMatch": ""
+                },
+                "functions": [
+                    {
+                        "type": "setHold",
+                        "params": {
+                            "holdType": "indefinite",
+                            "fan": "on"
+                        }
+                    }
+                ]
+            })
+        ).raise_for_status()
+
+    def resumeProgram(self):
+        headers = self.__getAuthHeaders__()
+        self.__withRefresh__(
+            lambda: requests.post(THERMOSTAT_URL, headers=headers, json={
+                "selection": {
+                    "selectionType": "registered",
+                    "selectionMatch": ""
+                },
+                "functions": [
+                    {
+                        "type": "resumeProgram",
+                        "params": {
+                            "resumeAll": False
+                        }
+                    }
+                ]
+            })
+        ).raise_for_status()

@@ -8,34 +8,42 @@ except ImportError:
 
 
 class GPIO():
-    pinNumber = None
-    pinOn = None
+    _testMode = None
+    _pinNumber = None
+    _pinOn = None
 
     def __updatePin(self):
-        if self.test:
-            print("Would set pin to {}".format("on" if self.pinOn else "off"))
+        if self._testMode:
+            print("Would set pin to {}".format("on" if self._pinOn else "off"))
             return
 
-        RPi.GPIO.output(self.pinNumber, self.pinOn)
+        RPi.GPIO.output(self._pinNumber, self._pinOn)
 
     def __init__(self):
-        self.pin = config.get('Environment', 'PinNumber', None)
-        self.test = testMode
+        self._testMode = testMode
+        self._pinNumber = config.get('Environment', 'PinNumber', None)
+        self._pinOn = False
 
-        if not self.test:
+        if not self._testMode:
             RPi.GPIO.setmode(RPi.GPIO.BOARD)
-            RPi.GPIO.setup(self.pin, RPi.GPIO.OUT)
+            RPi.GPIO.setup(self._pinNumber, RPi.GPIO.OUT)
 
         self.__updatePin()
 
     def setOn(self):
-        if (self.pinOn is True):
-            return       
-        self.pinOn = True
+        if (self._pinOn is True):
+            return
+        self._pinOn = True
         self.__updatePin()
 
     def setOff(self):
-        if (self.pinOn is False):
+        if (self._pinOn is False):
             return
-        self.pinOn = False
+        self._pinOn = False
         self.__updatePin()
+
+    def isOn(self):
+        return self._pinOn is True
+
+    def isOff(self):
+        return self._pinOn is False
