@@ -22,12 +22,12 @@ def checkTemps():
     tempDiff = ecobee.getTempDifferential()
 
     # Current temperature is a degree greater than desired
-    if fireplace.isOn() and tempDiff > 10:
+    if fireplace.isOn() and tempDiff > 5:
         fireplace.setOff()
         ecobee.resumeProgram()
 
     # Current temperature is a degree less than desired
-    if fireplace.isOff() and tempDiff < -10:
+    if fireplace.isOff() and tempDiff < -5:
         fireplace.setOn()
         ecobee.setFanHold()
 
