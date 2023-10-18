@@ -1,5 +1,7 @@
+import sys
 import time
 import threading
+import signal
 from gpio import GPIO
 from ecobee import Ecobee
 from configuration import config
@@ -8,13 +10,16 @@ from flask import Flask, render_template, request, flash
 if 'Environment' not in config.sections():
     raise Exception("Cannot find config data. Did you setup config.ini?")
 
+TEMP_CHECK_DELAY_SEC = 180
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.get('Environment', 'SecretKey', None)
 task_thread = None
-TEMP_CHECK_DELAY_SEC = 180
+fireplace = GPIO()
+ecobee = Ecobee()
 
 # Global flags to control the scheduled task
-allowEventLoop = True
+eventLoopActive = False
 forceRefresh = False
 
 
@@ -33,12 +38,11 @@ def checkTemps():
 
 
 def eventLoop():
-    global allowEventLoop, forceRefresh
+    global forceRefresh
     seconds = 0
-    while allowEventLoop:
+    while eventLoopActive:
         if (forceRefresh or seconds % TEMP_CHECK_DELAY_SEC == 0):
             checkTemps()
-            print("Current temp: {}".format(str(ecobee.getCurrentTemp())))
             seconds = 0
             forceRefresh = False
         seconds += 1
@@ -48,8 +52,16 @@ def eventLoop():
 
 @app.route("/")
 def home():
+    data = [
+            ('Thread running', 'Yes' if eventLoopActive else 'No'),
+            ('Current temp', ecobee.getCurrentTemp()),
+            ('Desired heat', ecobee.getDesiredHeat()),
+            ('Override desired temp', ecobee.overrideTargetTemp),
+            ('Fireplace state', 'On' if fireplace.isOn() else 'Off'),
+            ('Fan hold', 'On' if ecobee.fanHoldActive else 'Off')
+           ]
     return render_template('index.html',
-                           currentTemp=ecobee.getCurrentTemp())
+                           data=data)
 
 
 @app.route("/on")
@@ -78,7 +90,7 @@ def getEvents():
 
 @app.route("/currentTemp")
 def getCurrentTemp():
-    return ecobee.getCurrentTemp()
+    return render_template('simple.html', content=ecobee.getCurrentTemp())
 
 
 @app.route("/authorize")
@@ -99,9 +111,9 @@ def refreshToken():
 
 @app.route("/start")
 def start():
-    global allowEventLoop, task_thread
-    if not allowEventLoop:
-        allowEventLoop = True
+    global eventLoopActive
+    if not eventLoopActive:
+        eventLoopActive = True
     if task_thread is None or not task_thread.is_alive():
         task_thread = threading.Thread(target=eventLoop)
         task_thread.daemon = True
@@ -113,9 +125,9 @@ def start():
 
 @app.route("/stop")
 def stop():
-    global allowEventLoop
-    if allowEventLoop:
-        allowEventLoop = False
+    global eventLoopActive
+    if eventLoopActive:
+        eventLoopActive = False
     return "<p>Thread will stop</p>"
 
 
@@ -143,15 +155,17 @@ def override():
                            currentOverride=ecobee.overrideTargetTemp)
 
 
-def setup():
-    global fireplace, ecobee
-    fireplace = GPIO()
-    ecobee = Ecobee()
+def onExit(signal, frame):
+    fireplace.cleanup()
+    sys.exit()
+
+
+signal.signal(signal.SIGINT, onExit)
 
 
 if __name__ == '__main__':
-    setup()
     app.run(
         host=config.get('Environment', 'Host', '127.0.0.1'),
         port=config.get('Environment', 'Port', '5000')
     )
+

@@ -35,6 +35,7 @@ class Ecobee():
     accessToken: str = None
     cache: Dict[str, CacheEntry] = {}
     overrideTargetTemp = None
+    fanHoldActive = False
 
     def __requestAccessToken__(self):
         clientId = config.get('Auth', 'ClientId', None)
@@ -80,7 +81,6 @@ class Ecobee():
                     func: Callable[..., requests.Response],
                     cacheKey: str):
         if cacheKey in self.cache and self.cache[cacheKey].isCurrent():
-            print("hit cache")
             return self.cache[cacheKey].value
         print("making request")
         response = self.__withRefresh__(func)
@@ -193,6 +193,9 @@ class Ecobee():
         return actualTemperature - setTemperature
 
     def setFanHold(self):
+        if self.fanHoldActive:
+            return
+
         headers = self.__getAuthHeaders__()
         self.__withRefresh__(
             lambda: requests.post(THERMOSTAT_URL, headers=headers, json={
@@ -211,8 +214,12 @@ class Ecobee():
                 ]
             })
         ).raise_for_status()
+        self.fanHoldActive = True
 
     def resumeProgram(self):
+        if not self.fanHoldActive:
+            return
+
         headers = self.__getAuthHeaders__()
         self.__withRefresh__(
             lambda: requests.post(THERMOSTAT_URL, headers=headers, json={
@@ -230,9 +237,17 @@ class Ecobee():
                 ]
             })
         ).raise_for_status()
+        self.fanHoldActive = False
 
     def setOverrideTargetTemp(self, target: int):
         self.overrideTargetTemp = target
 
     def clearOverrideTargetTemp(self):
         self.overrideTargetTemp = None
+
+    def getDesiredHeat(self):
+        return (self.__getInfoRuntime__().json()
+                ['thermostatList'][0]
+                ['runtime']
+                ['desiredHeat'])
+

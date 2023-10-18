@@ -49,3 +49,9 @@ class GPIO():
 
     def isOff(self):
         return self._pinOn is False
+
+    def cleanup(self):
+        print("Cleaning up GPIO")
+        if not self._testMode:
+            RPi.GPIO.cleanup()
+
