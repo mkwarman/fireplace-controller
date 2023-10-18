@@ -3,38 +3,44 @@ import threading
 from gpio import GPIO
 from ecobee import Ecobee
 from configuration import config
-from flask import Flask, render_template
+from flask import Flask, render_template, request, flash
+
+if 'Environment' not in config.sections():
+    raise Exception("Cannot find config data. Did you setup config.ini?")
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = config.get('Environment', 'SecretKey', None)
 task_thread = None
 TEMP_CHECK_DELAY_SEC = 180
 
-# Global flag to control the scheduled task
+# Global flags to control the scheduled task
 allowEventLoop = True
+forceRefresh = False
 
 
 def checkTemps():
     tempDiff = ecobee.getTempDifferential()
 
-    # Current temperature is equal to or greater than desired
-    if fireplace.isOn() and tempDiff > 0:
+    # Current temperature is a degree greater than desired
+    if fireplace.isOn() and tempDiff > 10:
         fireplace.setOff()
         ecobee.resumeProgram()
 
-    # Current temperature is a degree under desired
+    # Current temperature is a degree less than desired
     if fireplace.isOff() and tempDiff < -10:
         fireplace.setOn()
         ecobee.setFanHold()
 
 
 def eventLoop():
-    global allowEventLoop
+    global allowEventLoop, forceRefresh
     seconds = 0
     while allowEventLoop:
-        if (seconds % TEMP_CHECK_DELAY_SEC == 0):
+        if (forceRefresh or seconds % TEMP_CHECK_DELAY_SEC == 0):
             checkTemps()
             print("Current temp: {}".format(str(ecobee.getCurrentTemp())))
             seconds = 0
+            forceRefresh = False
         seconds += 1
         time.sleep(1)
     print("Thread ended")
@@ -49,12 +55,14 @@ def home():
 @app.route("/on")
 def on():
     fireplace.setOn()
+    ecobee.setFanHold()
     return "<p>On</p>"
 
 
 @app.route("/off")
 def off():
     fireplace.setOff()
+    ecobee.resumeProgram()
     return "<p>Off</p>"
 
 
@@ -111,11 +119,32 @@ def stop():
     return "<p>Thread will stop</p>"
 
 
+@app.route("/override", methods=('GET', 'POST'))
+def override():
+    global forceRefresh
+    if request.method == 'POST':
+        override = None
+        try:
+            formVal = request.form['override']
+            override = int(formVal) if formVal else None
+        except Exception as e:
+            print(e)
+
+        if override:
+            ecobee.setOverrideTargetTemp(override)
+            flash("Set to {}".format(str(override)))
+        else:
+            ecobee.clearOverrideTargetTemp()
+            flash("Cleared")
+
+        forceRefresh = True
+
+    return render_template('override.html',
+                           currentOverride=ecobee.overrideTargetTemp)
+
+
 def setup():
     global fireplace, ecobee
-
-    if 'Environment' not in config.sections():
-        raise Exception("Cannot find config data. Did you setup config.ini?")
     fireplace = GPIO()
     ecobee = Ecobee()
 

@@ -1,0 +1,19 @@
+<html>
+  <head>
+    <title>Override</title>
+  </head>
+  <body>
+    <form method="post">
+      <label for="override">Override (in tens of degrees F)</label>
+      <br>
+      <input type="number" name="override"
+             placeholder="{{710}}"
+             value="{{currentOverride}}"></input>
+      <br>
+      <button type="submit">Submit</button>
+    </form>
+    {% for message in get_flashed_messages() %}
+      <div class="alert">{{ message }}</div>
+    {% endfor %}
+  </body>
+</html>

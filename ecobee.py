@@ -34,6 +34,7 @@ class Ecobee():
     auth: EcobeeAuth = None
     accessToken: str = None
     cache: Dict[str, CacheEntry] = {}
+    overrideTargetTemp = None
 
     def __requestAccessToken__(self):
         clientId = config.get('Auth', 'ClientId', None)
@@ -185,7 +186,9 @@ class Ecobee():
         runtime = infoRuntime.json()['thermostatList'][0]['runtime']
 
         actualTemperature = int(runtime['actualTemperature'])
-        setTemperature = int(runtime['desiredHeat'])
+        setTemperature = (int(runtime['desiredHeat'])
+                          if self.overrideTargetTemp is None
+                          else self.overrideTargetTemp)
 
         return actualTemperature - setTemperature
 
@@ -227,3 +230,9 @@ class Ecobee():
                 ]
             })
         ).raise_for_status()
+
+    def setOverrideTargetTemp(self, target: int):
+        self.overrideTargetTemp = target
+
+    def clearOverrideTargetTemp(self):
+        self.overrideTargetTemp = None
