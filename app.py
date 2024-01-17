@@ -27,12 +27,12 @@ def checkTemps():
     tempDiff = ecobee.getTempDifferential()
 
     # Current temperature is a degree greater than desired
-    if fireplace.isOn() and tempDiff > 5:
+    if fireplace.isOn() and (tempDiff > 5):
         fireplace.setOff()
         ecobee.resumeProgram()
 
     # Current temperature is a degree less than desired
-    if fireplace.isOff() and tempDiff < -5:
+    if fireplace.isOff() and (tempDiff < -5):
         fireplace.setOn()
         ecobee.setFanHold()
 
@@ -111,7 +111,7 @@ def refreshToken():
 
 @app.route("/start")
 def start():
-    global eventLoopActive
+    global eventLoopActive, task_thread
     if not eventLoopActive:
         eventLoopActive = True
     if task_thread is None or not task_thread.is_alive():
