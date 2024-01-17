@@ -222,15 +222,18 @@ class Ecobee():
         is warmer than desired, negative number indicate that the current
         temperature is lower than desired.
         """
-        infoRuntime = self.__getInfoRuntime__()
-        runtime = infoRuntime.json()['thermostatList'][0]['runtime']
+        infoJson = self.__getInfoRuntimeSensors__().json()
+        sensors = infoJson['thermostatList'][0]['remoteSensors']
+        runtime = infoJson['thermostatList'][0]['runtime']
 
-        actualTemperature = int(runtime['actualTemperature'])
+        currentTemp = int(next(getTemp(sensor) for sensor in sensors
+                          if sensor['name'] == MONITOR_SENSOR_NAME))
+
         setTemperature = (int(runtime['desiredHeat'])
                           if self.overrideTargetTemp is None
                           else self.overrideTargetTemp)
 
-        return actualTemperature - setTemperature
+        return currentTemp - setTemperature
 
     def setFanHold(self):
         if self.fanHoldActive:
