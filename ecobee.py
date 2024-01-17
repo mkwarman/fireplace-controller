@@ -11,11 +11,22 @@ THERMOSTAT_URL = 'https://api.ecobee.com/1/thermostat?format=json'
 # Cache life is 3 minutes, per ecobee API limits
 # https://www.ecobee.com/home/developer/api/documentation/v1/operations/get-thermostat-summary.shtml
 CACHE_LIFE = 180
+# TODO: This should be a config value
+MONITOR_SENSOR_NAME = 'Home'
 
 
 def isExpiredTokenResult(response: requests.Response):
     return (response.status_code == 500 and
             response.json()['status']['code'] == 14)
+
+
+def getTemp(sensor):
+    return next((x['value'] for x in sensor['capability']
+                 if x['type'] == 'temperature'))
+
+
+def starWatched(name):
+    return "*" + name if name == MONITOR_SENSOR_NAME else name
 
 
 class CacheEntry():
@@ -100,6 +111,32 @@ class Ecobee():
                          ),
             'INFO_runtime')
 
+    def __getInfoSensors__(self):
+        return self.__request__(
+            lambda:
+            requests.get(THERMOSTAT_URL,
+                         headers=self.__getAuthHeaders__(),
+                         params={
+                            'body': '''
+                            {"selection":{"selectionType":"registered",
+                            "selectionMatch":"","includeSensors":true}}
+                            '''}
+                         ),
+            'INFO_sensors')
+
+    def __getInfoRuntimeSensors__(self):
+        return self.__request__(
+            lambda:
+            requests.get(THERMOSTAT_URL,
+                         headers=self.__getAuthHeaders__(),
+                         params={
+                            'body': '''
+                            {"selection":{"selectionType":"registered",
+                            "selectionMatch":"","includeRuntime":true,"includeSensors":true}}
+                            '''}
+                         ),
+            'INFO_runtime_sensors')
+
     def __getInfoRuntimeSettingsStatus__(self):
         return self.__request__(
             lambda:
@@ -155,6 +192,9 @@ class Ecobee():
     def getInfo(self):
         return self.__getInfoRuntimeSettingsStatus__().json()
 
+    def getSensors(self):
+        return self.__getInfoSensors__().json()
+
     def getEvents(self):
         # Not cached as events can happen anytime
         return self.__withRefresh__(
@@ -168,12 +208,12 @@ class Ecobee():
                                  )).json()
 
     def getCurrentTemp(self):
-        infoRuntime = self.__getInfoRuntime__()
-
-        return int(infoRuntime.json()
+        sensors = (self.__getInfoSensors__().json()
                    ['thermostatList'][0]
-                   ['runtime']
-                   ['actualTemperature'])
+                   ['remoteSensors'])
+
+        return int(next(getTemp(sensor) for sensor in sensors
+                        if sensor['name'] == MONITOR_SENSOR_NAME))
 
     def getTempDifferential(self):
         """
@@ -251,3 +291,28 @@ class Ecobee():
                 ['runtime']
                 ['desiredHeat'])
 
+    def getSummaryData(self):
+        infoJson = self.__getInfoRuntimeSensors__().json()
+
+        runtimeTemp = int(infoJson
+                          ['thermostatList'][0]
+                          ['runtime']
+                          ['actualTemperature'])
+
+        desiredHeat = int(infoJson
+                          ['thermostatList'][0]
+                          ['runtime']
+                          ['desiredHeat'])
+
+        sensors = (infoJson
+                   ['thermostatList'][0]
+                   ['remoteSensors'])
+
+        sensorList = map(lambda sensor: (starWatched(sensor['name']),
+                                         getTemp(sensor)), sensors)
+
+        return {
+            "runtimeTemp": runtimeTemp,
+            "desiredHeat": desiredHeat,
+            "sensorList": sensorList
+        }

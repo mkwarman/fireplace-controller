@@ -52,14 +52,20 @@ def eventLoop():
 
 @app.route("/")
 def home():
+    summaryData = ecobee.getSummaryData()
+    sensors = map(lambda sensor: ("-> " + sensor[0], sensor[1]),
+                  summaryData['sensorList'])
     data = [
             ('Thread running', 'Yes' if eventLoopActive else 'No'),
-            ('Current temp', ecobee.getCurrentTemp()),
-            ('Desired heat', ecobee.getDesiredHeat()),
+            ('Runtime temp', summaryData['runtimeTemp']),
+            *sensors,
+            ('Desired heat', summaryData['desiredHeat']),
             ('Override desired temp', ecobee.overrideTargetTemp),
             ('Fireplace state', 'On' if fireplace.isOn() else 'Off'),
             ('Fan hold', 'On' if ecobee.fanHoldActive else 'Off')
            ]
+    for sensor in sensors:
+        data.append(sensor)
     return render_template('index.html',
                            data=data)
 
@@ -81,6 +87,11 @@ def off():
 @app.route("/info")
 def getInfo():
     return ecobee.getInfo()
+
+
+@app.route("/sensors")
+def getSensors():
+    return ecobee.getSensors()
 
 
 @app.route("/events")
