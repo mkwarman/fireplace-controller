@@ -26,13 +26,20 @@ forceRefresh = False
 def checkTemps():
     tempDiff = ecobee.getTempDifferential()
 
+    print("tempDiff: {}".format(tempDiff))
+    print("fireplace.isOn(): {}".format(fireplace.isOn()))
+    print("fireplace.isOff(): {}".format(fireplace.isOff()))
+    print("tempDiff > 5: {}".format(tempDiff > 5))
+    print("tempDiff < -5: {}".format(tempDiff < -5))
     # Current temperature is a degree greater than desired
     if fireplace.isOn() and (tempDiff > 5):
+        print("should turn off")
         fireplace.setOff()
         ecobee.resumeProgram()
 
     # Current temperature is a degree less than desired
     if fireplace.isOff() and (tempDiff < -5):
+        print("should turn on")
         fireplace.setOn()
         ecobee.setFanHold()
 
@@ -164,6 +171,19 @@ def override():
 
     return render_template('override.html',
                            currentOverride=ecobee.overrideTargetTemp)
+
+
+@app.route("/stopoff", methods=('GET', 'POST'))
+def stopoff():
+    global eventLoopActive
+    if request.method == 'POST':
+        if eventLoopActive:
+            eventLoopActive = False
+            fireplace.setOff()
+            ecobee.resumeProgram()
+
+    return render_template('stopoff.html')
+
 
 
 def onExit(signal, frame):

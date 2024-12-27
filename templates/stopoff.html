@@ -1,0 +1,12 @@
+{% extends "base.html" -%}
+{% block content -%}
+<form method="post">
+  <label for="override">Turn off the fireplace</label>
+  <br>
+  <button type="submit">Turn it off</button>
+</form>
+{% for message in get_flashed_messages() %}
+  <div class="alert">{{ message }}</div>
+{% endfor %}
+{%- endblock content %}
+
