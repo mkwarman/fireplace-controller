@@ -11,44 +11,84 @@ except ImportError:
 
 class GPIO():
     _testMode = None
-    _pinNumber = None
-    _pinOn = None
 
-    def __updatePin(self):
+    _fireplacePinNumber = None
+    _indicatorPinNumber = None
+    _buttonPinNumber = None
+
+    _fireplacePinOn = None
+    _indicatorPinOn = None
+    _buttonCallback = None
+
+    def __updatePin(self, pinNumber, isOn):
         if self._testMode:
-            print("Would set pin to {}".format("on" if self._pinOn else "off"))
+            print("Test mode: Would set pin {pinNumber} to {onOrOff}".format(pinNumber=pinNumber, onOrOff=("on" if self._fireplacePinOn else "off")))
             return
 
-        RPi.GPIO.output(self._pinNumber, self._pinOn)
+        RPi.GPIO.output(pinNumber, isOn)
 
-    def __init__(self):
+    def __init__(self, buttonCallback):
         self._testMode = testMode
-        self._pinNumber = int(config.get('Environment', 'PinNumber', None))
-        self._pinOn = False
+        self._fireplacePinNumber = int(config.get('Environment', 'FireplacePinNumber', None))
+        self._indicatorPinNumber = int(config.get('Environment', 'IndicatorPinNumber', None))
+        self._buttonPinNumber = int(config.get('Environment', 'ButtonPinNumber', None))
+        self._fireplacePinOn = False
+        self._indicatorPinOn = False
+        self._buttonCallback = buttonCallback
 
         if not self._testMode:
             RPi.GPIO.setmode(RPi.GPIO.BOARD)
-            RPi.GPIO.setup(self._pinNumber, RPi.GPIO.OUT)
 
-        self.__updatePin()
+            RPi.GPIO.setup(self._fireplacePinNumber, RPi.GPIO.OUT)
+            RPi.GPIO.setup(self._indicatorPinNumber, RPi.GPIO.OUT)
+            RPi.GPIO.setup(self._buttonPinNumber, RPi.GPIO.IN, pull_up_down=RPi.GPIO.PUD_UP)
+        else:
+            print("Test mode: Would initialize pin inputs and outputs")
 
-    def setOn(self):
-        if (self._pinOn is True):
+        self.__updatePin(self._fireplacePinNumber, self._fireplacePinOn)
+        self.__updatePin(self._indicatorPinNumber, self._indicatorPinOn)
+
+    def setButtonCallback(self, buttonCallback):
+        if not self._testMode:
+            RPi.GPIO.add_event_detect(self._buttonPinNumber, RPi.GPIO.RISING, callback=buttonCallback, bouncetime=200)
+        else:
+            print("Test mode: Would set event callback for button press")
+
+    def setFireplaceOn(self):
+        if (self._fireplacePinOn is True):
             return
-        self._pinOn = True
-        self.__updatePin()
+        self._fireplacePinOn = True
+        self.__updatePin(self._fireplacePinNumber, self._fireplacePinOn)
 
-    def setOff(self):
-        if (self._pinOn is False):
+    def setFireplaceOff(self):
+        if (self._fireplacePinOn is False):
             return
-        self._pinOn = False
-        self.__updatePin()
+        self._fireplacePinOn = False
+        self.__updatePin(self._fireplacePinNumber, self._fireplacePinOn)
 
-    def isOn(self):
-        return self._pinOn is True
+    def setIndicatorOn(self):
+        if (self._indicatorPinOn is True):
+            return
+        self._indicatorPinOn = True
+        self.__updatePin(self._indicatorPinNumber, self._indicatorPinOn)
 
-    def isOff(self):
-        return self._pinOn is False
+    def setIndicatorOff(self):
+        if (self._indicatorPinOn is False):
+            return
+        self._indicatorPinOn = False
+        self.__updatePin(self._indicatorPinNumber, self._indicatorPinOn)
+
+    def isFireplaceOn(self):
+        return self._fireplacePinOn is True
+
+    def isFireplaceOff(self):
+        return self._fireplacePinOn is False
+
+    def isIndicatorOn(self):
+        return self._indicatorPinOn is True
+
+    def isIndicatorOff(self):
+        return self._indicatorPinOn is False
 
     def cleanup(self):
         print("Cleaning up GPIO")

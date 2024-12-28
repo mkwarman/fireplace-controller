@@ -15,7 +15,7 @@ TEMP_CHECK_DELAY_SEC = 180
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.get('Environment', 'SecretKey', None)
 task_thread = None
-fireplace = GPIO()
+gpio = GPIO()
 ecobee = Ecobee()
 
 # Global flags to control the scheduled task
@@ -27,20 +27,20 @@ def checkTemps():
     tempDiff = ecobee.getTempDifferential()
 
     print("tempDiff: {}".format(tempDiff))
-    print("fireplace.isOn(): {}".format(fireplace.isOn()))
-    print("fireplace.isOff(): {}".format(fireplace.isOff()))
+    print("fireplace.isOn(): {}".format(gpio.isFireplaceOn()))
+    print("fireplace.isOff(): {}".format(gpio.isFireplaceOff()))
     print("tempDiff > 5: {}".format(tempDiff > 5))
     print("tempDiff < -5: {}".format(tempDiff < -5))
     # Current temperature is a degree greater than desired
-    if fireplace.isOn() and (tempDiff > 5):
+    if gpio.isFireplaceOn() and (tempDiff > 5):
         print("should turn off")
-        fireplace.setOff()
+        gpio.setFireplaceOff()
         ecobee.resumeProgram()
 
     # Current temperature is a degree less than desired
-    if fireplace.isOff() and (tempDiff < -5):
+    if gpio.isFireplaceOff() and (tempDiff < -5):
         print("should turn on")
-        fireplace.setOn()
+        gpio.setFireplaceOn()
         ecobee.setFanHold()
 
 
@@ -57,6 +57,53 @@ def eventLoop():
     print("Thread ended")
 
 
+def startThread():
+    global eventLoopActive, task_thread
+    if not eventLoopActive:
+        eventLoopActive = True
+    if not gpio.isIndicatorOn():
+        gpio.setIndicatorOn()
+    if task_thread is None or not task_thread.is_alive():
+        task_thread = threading.Thread(target=eventLoop)
+        task_thread.daemon = True
+        task_thread.start()
+
+
+def stopThread():
+    global eventLoopActive
+    if eventLoopActive:
+        eventLoopActive = False
+    if gpio.isIndicatorOn():
+        gpio.setIndicatorOff()
+
+
+# Toggle event loop whenever button is pressed
+def buttonCallback():
+    global eventLoopActive
+    if eventLoopActive:
+        stopThread()
+        stopFireplace()
+    else:
+        startThread()
+
+    
+gpio.setButtonCallback(buttonCallback)
+
+
+def startFireplace():
+    if not gpio.isFireplaceOn():
+        gpio.setFireplaceOn()
+    if not ecobee.fanHoldActive:
+        ecobee.setFanHold()
+
+
+def stopFireplace():
+    if gpio.isFireplaceOn():
+        gpio.setFireplaceOff()
+    if ecobee.fanHoldActive:
+        ecobee.resumeProgram()
+
+
 @app.route("/")
 def home():
     summaryData = ecobee.getSummaryData()
@@ -68,7 +115,7 @@ def home():
             *sensors,
             ('Desired heat', summaryData['desiredHeat']),
             ('Override desired temp', ecobee.overrideTargetTemp),
-            ('Fireplace state', 'On' if fireplace.isOn() else 'Off'),
+            ('Fireplace state', 'On' if gpio.isFireplaceOn() else 'Off'),
             ('Fan hold', 'On' if ecobee.fanHoldActive else 'Off')
            ]
     for sensor in sensors:
@@ -79,15 +126,13 @@ def home():
 
 @app.route("/on")
 def on():
-    fireplace.setOn()
-    ecobee.setFanHold()
+    startFireplace()
     return "<p>On</p>"
 
 
 @app.route("/off")
 def off():
-    fireplace.setOff()
-    ecobee.resumeProgram()
+    stopFireplace()
     return "<p>Off</p>"
 
 
@@ -129,23 +174,13 @@ def refreshToken():
 
 @app.route("/start")
 def start():
-    global eventLoopActive, task_thread
-    if not eventLoopActive:
-        eventLoopActive = True
-    if task_thread is None or not task_thread.is_alive():
-        task_thread = threading.Thread(target=eventLoop)
-        task_thread.daemon = True
-        task_thread.start()
-        return "<p>Thread will start</p>"
-    else:
-        return "<p>Thread will continue</p>"
+    startThread()
+    return "<p>Thread will start</p>"
 
 
 @app.route("/stop")
 def stop():
-    global eventLoopActive
-    if eventLoopActive:
-        eventLoopActive = False
+    stopThread()
     return "<p>Thread will stop</p>"
 
 
@@ -177,17 +212,15 @@ def override():
 def stopoff():
     global eventLoopActive
     if request.method == 'POST':
-        if eventLoopActive:
-            eventLoopActive = False
-            fireplace.setOff()
-            ecobee.resumeProgram()
+        stopThread()
+        stopFireplace()
 
     return render_template('stopoff.html')
 
 
 
 def onExit(signal, frame):
-    fireplace.cleanup()
+    gpio.cleanup()
     sys.exit()
 
 
