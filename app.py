@@ -11,6 +11,7 @@ if 'Environment' not in config.sections():
     raise Exception("Cannot find config data. Did you setup config.ini?")
 
 TEMP_CHECK_DELAY_SEC = 180
+TEMP_DIFF = 5
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.get('Environment', 'SecretKey', None)
@@ -23,29 +24,42 @@ eventLoopActive = False
 forceRefresh = False
 
 
+def startFireplace():
+    if not gpio.isFireplaceOn():
+        gpio.setFireplaceOn()
+    if not ecobee.fanHoldActive:
+        ecobee.setFanHold()
+
+
+def stopFireplace():
+    if gpio.isFireplaceOn():
+        gpio.setFireplaceOff()
+    if ecobee.fanHoldActive:
+        ecobee.resumeProgram()
+
+
 def checkTemps():
+    global eventLoopActive
+
     tempDiff = ecobee.getTempDifferential()
 
     print("tempDiff: {}".format(tempDiff))
     print("fireplace.isOn(): {}".format(gpio.isFireplaceOn()))
     print("fireplace.isOff(): {}".format(gpio.isFireplaceOff()))
-    print("tempDiff > 5: {}".format(tempDiff > 5))
-    print("tempDiff < -5: {}".format(tempDiff < -5))
-    # Current temperature is a degree greater than desired
-    if gpio.isFireplaceOn() and (tempDiff > 5):
-        print("should turn off")
-        gpio.setFireplaceOff()
-        ecobee.resumeProgram()
+    print("tempDiff > {}: {}".format(TEMP_DIFF, tempDiff > TEMP_DIFF))
+    print("tempDiff < -{}: {}".format(TEMP_DIFF, tempDiff < -TEMP_DIFF))
 
-    # Current temperature is a degree less than desired
-    if gpio.isFireplaceOff() and (tempDiff < -5):
-        print("should turn on")
-        gpio.setFireplaceOn()
-        ecobee.setFanHold()
+    # Current temperature is greater than desired
+    if eventLoopActive and (tempDiff > TEMP_DIFF):
+        stopFireplace()
+
+    # Current temperature is less than desired
+    if eventLoopActive and (tempDiff < -TEMP_DIFF):
+        startFireplace()
 
 
 def eventLoop():
-    global forceRefresh
+    global eventLoopActive, forceRefresh
     seconds = 0
     while eventLoopActive:
         if (forceRefresh or seconds % TEMP_CHECK_DELAY_SEC == 0):
@@ -79,8 +93,8 @@ def stopThread():
         gpio.setIndicatorOff()
 
 
-# Toggle event loop whenever button is pressed
-def buttonCallback():
+# Toggle event loop whenever button is pressed. Discard arguments
+def buttonCallback(*_):
     global eventLoopActive
     if eventLoopActive:
         stopThread()
@@ -90,20 +104,6 @@ def buttonCallback():
 
     
 gpio.setButtonCallback(buttonCallback)
-
-
-def startFireplace():
-    if not gpio.isFireplaceOn():
-        gpio.setFireplaceOn()
-    if not ecobee.fanHoldActive:
-        ecobee.setFanHold()
-
-
-def stopFireplace():
-    if gpio.isFireplaceOn():
-        gpio.setFireplaceOff()
-    if ecobee.fanHoldActive:
-        ecobee.resumeProgram()
 
 
 @app.route("/")

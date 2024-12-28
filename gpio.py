@@ -39,7 +39,7 @@ class GPIO():
 
             RPi.GPIO.setup(self._fireplacePinNumber, RPi.GPIO.OUT)
             RPi.GPIO.setup(self._indicatorPinNumber, RPi.GPIO.OUT)
-            RPi.GPIO.setup(self._buttonPinNumber, RPi.GPIO.IN, pull_up_down=RPi.GPIO.PUD_UP)
+            RPi.GPIO.setup(self._buttonPinNumber, RPi.GPIO.IN, pull_up_down=RPi.GPIO.PUD_DOWN)
         else:
             print("Test mode: Would initialize pin inputs and outputs")
 
