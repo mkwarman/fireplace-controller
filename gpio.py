@@ -18,7 +18,6 @@ class GPIO():
 
     _fireplacePinOn = None
     _indicatorPinOn = None
-    _buttonCallback = None
 
     def __updatePin(self, pinNumber, isOn):
         if self._testMode:
@@ -27,14 +26,13 @@ class GPIO():
 
         RPi.GPIO.output(pinNumber, isOn)
 
-    def __init__(self, buttonCallback):
+    def __init__(self):
         self._testMode = testMode
         self._fireplacePinNumber = int(config.get('Environment', 'FireplacePinNumber', None))
         self._indicatorPinNumber = int(config.get('Environment', 'IndicatorPinNumber', None))
         self._buttonPinNumber = int(config.get('Environment', 'ButtonPinNumber', None))
         self._fireplacePinOn = False
         self._indicatorPinOn = False
-        self._buttonCallback = buttonCallback
 
         if not self._testMode:
             RPi.GPIO.setmode(RPi.GPIO.BOARD)

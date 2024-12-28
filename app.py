@@ -59,6 +59,7 @@ def eventLoop():
 
 def startThread():
     global eventLoopActive, task_thread
+    print("Starting thread")
     if not eventLoopActive:
         eventLoopActive = True
     if not gpio.isIndicatorOn():
@@ -71,6 +72,7 @@ def startThread():
 
 def stopThread():
     global eventLoopActive
+    print("Stopping thread")
     if eventLoopActive:
         eventLoopActive = False
     if gpio.isIndicatorOn():
