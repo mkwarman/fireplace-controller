@@ -11,7 +11,7 @@ if 'Environment' not in config.sections():
     raise Exception("Cannot find config data. Did you setup config.ini?")
 
 TEMP_CHECK_DELAY_SEC = 180
-TEMP_DIFF = 5
+TEMP_DIFF = 2
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.get('Environment', 'SecretKey', None)
